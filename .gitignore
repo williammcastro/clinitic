@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+coverage/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime/temp files
+tmp/
+temp/
+*.tmp
+*.pid
+
+# Audio/video captures and generated media
+*.wav
+*.mp3
+*.mp4
+*.m4a
+*.aac
+*.pcm
+*.raw
+
+# OS/editor files
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# TypeScript incremental cache
+*.tsbuildinfo
