@@ -680,7 +680,7 @@ env SWIFT_MODULECACHE_PATH=/private/tmp/clinitic-swift-module-cache CLANG_MODULE
 Prueba de transcripcion dual con Riva:
 
 ```txt
-TEST_DURATION_SECONDS=20 RIVA_ADDRESS=192.168.1.205:50051 RIVA_LANGUAGE_CODE=es-en-US pnpm run test:riva:dual-mic
+RIVA_ADDRESS=192.168.1.205:50051 RIVA_LANGUAGE_CODE=es-en-US pnpm run test:riva:dual-mic
 ```
 
 Mapeo AVFoundation actual:

@@ -22,7 +22,6 @@ type ActiveStream = {
 
 const RIVA_ADDRESS = process.env.RIVA_ADDRESS ?? "192.168.1.205:50051";
 const RIVA_LANGUAGE_CODE = process.env.RIVA_LANGUAGE_CODE ?? "es-en-US";
-const TEST_DURATION_SECONDS = Number(process.env.TEST_DURATION_SECONDS ?? "20");
 
 const MIC_CONFIGS: MicConfig[] = [
   {
@@ -81,7 +80,7 @@ function startRivaStream(config: MicConfig): ActiveStream {
         max_alternatives: 1,
         enable_automatic_punctuation: true,
       },
-      interim_results: true,
+      interim_results: false,
     },
   });
 
@@ -162,13 +161,12 @@ function stopStream(stream: ActiveStream): void {
 console.log("Starting dual mic Riva smoke test");
 console.log(`RIVA_ADDRESS=${RIVA_ADDRESS}`);
 console.log(`RIVA_LANGUAGE_CODE=${RIVA_LANGUAGE_CODE}`);
-console.log(`TEST_DURATION_SECONDS=${TEST_DURATION_SECONDS}`);
 console.log("AVFoundation mapping:");
 for (const mic of MIC_CONFIGS) {
   console.log(`- ${mic.role}: audio index ${mic.avFoundationAudioIndex}`);
 }
 console.log("");
-console.log("Speak into each microphone. Press Ctrl+C to stop early.");
+console.log("Speak into each microphone. Press Ctrl+C to stop.");
 
 const streams = MIC_CONFIGS.map(startRivaStream);
 
@@ -183,8 +181,3 @@ process.on("SIGINT", () => {
   stopAll();
   setTimeout(() => process.exit(0), 500);
 });
-
-setTimeout(() => {
-  stopAll();
-  setTimeout(() => process.exit(0), 1000);
-}, TEST_DURATION_SECONDS * 1000);
