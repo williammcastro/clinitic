@@ -1,3 +1,10 @@
+/**
+ * Lab 05 - Single microphone Riva + Ollama browser UI.
+ *
+ * Runs a local Express and Socket.IO UI that shows live Riva transcripts and
+ * Ollama responses in the browser. This lab validates the real-time browser
+ * event flow before adding structured clinical-history slots.
+ */
 import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import process from "node:process";

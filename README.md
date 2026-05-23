@@ -4,6 +4,61 @@ Local AI assistant for medical offices. The goal is to listen to the doctor-pati
 
 This repository is organized as incremental labs. Each lab validates one technical piece before it is integrated into the main product.
 
+## Current App
+
+The first application version is based on Lab 06 and runs from:
+
+```txt
+src/app/server.ts
+```
+
+It keeps the same functional flow:
+
+```txt
+single microphone
+  -> Riva ASR final transcript
+  -> clinical term normalization
+  -> Ollama clinical-history extraction
+  -> Socket.IO browser updates
+```
+
+Run the app:
+
+```bash
+PORT=3000 \
+RIVA_ADDRESS=192.168.1.205:50051 \
+RIVA_LANGUAGE_CODE=es-en-US \
+AUDIO_INDEX=0 \
+OLLAMA_BASE_URL=http://192.168.1.205:11434 \
+OLLAMA_MODEL=mistral-nemo:latest \
+pnpm run dev
+```
+
+Open:
+
+```txt
+http://localhost:3000
+```
+
+The lab scripts remain available as manual diagnostics and regression checks.
+
+### App Structure
+
+```txt
+src/app/
+  server.ts                 App entrypoint
+  config.ts                 Environment and runtime configuration
+  consultation-session.ts   In-memory consultation state
+  ui/                       Browser HTML entrypoint
+
+src/domain/
+  clinical-history/         Slots, prompt, parser, fallbacks, extractor
+  clinical-dictionaries/    Term and medication normalization dictionaries
+
+src/infrastructure/
+  riva/                     Riva microphone streaming client
+```
+
 ## Lab 01 - Riva Transcription With Two Microphones
 
 ### Goal
@@ -644,7 +699,9 @@ lab:reset
 ## Scripts
 
 ```bash
+pnpm run dev
 pnpm run build
+pnpm start
 pnpm run test:riva:dual-mic
 pnpm run test:riva:single-mic
 pnpm run test:riva:single-mic:ollama

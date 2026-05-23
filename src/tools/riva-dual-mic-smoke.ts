@@ -1,3 +1,11 @@
+/**
+ * Lab 01 - Dual microphone Riva transcription smoke test.
+ *
+ * Captures two local macOS AVFoundation audio inputs with ffmpeg, sends each
+ * stream to NVIDIA Riva ASR over gRPC, and prints final transcripts labeled as
+ * doctor or patient. This lab validates the basic two-microphone path before
+ * adding LLM extraction or browser UI.
+ */
 import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import process from "node:process";

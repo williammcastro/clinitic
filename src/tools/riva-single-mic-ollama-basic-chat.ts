@@ -1,3 +1,10 @@
+/**
+ * Lab 04 - Single microphone Riva + Ollama basic chat latency test.
+ *
+ * Sends every final Riva transcript directly to Ollama as a simple chat turn
+ * and prints the response plus timing in the terminal. This lab is intentionally
+ * minimal so response latency can be evaluated without clinical extraction.
+ */
 import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import process from "node:process";

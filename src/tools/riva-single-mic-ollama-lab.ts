@@ -1,3 +1,10 @@
+/**
+ * Lab 03 - Single microphone Riva + Ollama clinical utterance extraction.
+ *
+ * Sends each final Riva transcript to Ollama and asks for a compact validated
+ * JSON summary of the utterance. This lab checks the basic ASR-to-LLM pipeline
+ * and schema validation without a browser interface.
+ */
 import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import process from "node:process";

@@ -1,3 +1,10 @@
+/**
+ * Lab 02 - Single microphone Riva transcription smoke test.
+ *
+ * Captures one local macOS AVFoundation audio input with ffmpeg, streams it to
+ * NVIDIA Riva ASR over gRPC, and prints final transcripts in the terminal. This
+ * lab isolates microphone capture and Riva transcription without Ollama or UI.
+ */
 import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import process from "node:process";

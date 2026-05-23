@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "ts-node-dev --respawn --transpile-only src/app.ts",
+    "dev": "ts-node-dev --respawn --transpile-only src/app/server.ts",
     "test:riva:dual-mic": "ts-node-dev --transpile-only --exit-child src/tools/riva-dual-mic-smoke.ts",
     "test:riva:single-mic": "ts-node-dev --transpile-only --exit-child src/tools/riva-single-mic-smoke.ts",
     "test:riva:single-mic:ollama": "ts-node-dev --transpile-only --exit-child src/tools/riva-single-mic-ollama-lab.ts",
@@ -12,7 +12,7 @@
     "test:riva:single-mic:ollama-ui": "ts-node-dev --transpile-only --exit-child src/tools/riva-single-mic-ollama-ui-lab.ts",
     "test:riva:single-mic:history-ui": "ts-node-dev --transpile-only --exit-child src/tools/riva-single-mic-clinical-history-ui-lab.ts",
     "build": "tsc",
-    "start": "node dist/app.js"
+    "start": "node dist/app/server.js"
   },
   "keywords": [],
   "author": "",

@@ -1,3 +1,11 @@
+/**
+ * Lab 06 - Single microphone clinical-history slot extraction UI.
+ *
+ * Captures one microphone, transcribes with Riva, normalizes common clinical
+ * terms, sends final transcripts to Ollama, and updates structured clinical
+ * history slots in a local browser UI. This lab is the current prototype for
+ * progressively building the editable clinical-history document.
+ */
 import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import process from "node:process";
@@ -7,7 +15,15 @@ import express from "express";
 import { Server } from "socket.io";
 import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
-import { z } from "zod";
+import { renderHtml } from "./ui/riva-single-mic-clinical-history-html";
+import { applyClinicalFallbacks } from "../domain/clinical-history/clinical-fallbacks";
+import { CLINICAL_HISTORY_SYSTEM_PROMPT } from "../domain/clinical-history/clinical-history-prompt";
+import { parseClinicalHistory } from "../domain/clinical-history/parse-clinical-history";
+import {
+  emptyClinicalHistory,
+  type ClinicalHistory,
+} from "../domain/clinical-history/schema";
+import { normalizeClinicalTerms } from "../domain/clinical-dictionaries/normalize-clinical-terms";
 
 const ffmpegPath = require("ffmpeg-static") as string | null;
 
@@ -39,56 +55,9 @@ const packageDef = protoLoader.loadSync(PROTO_PATH, {
 const proto = grpc.loadPackageDefinition(packageDef) as any;
 const RivaSpeechRecognition = proto.nvidia.riva.asr.RivaSpeechRecognition;
 
-const slotSchema = z.preprocess((value) => {
-  if (value === undefined || value === null) return null;
-  if (Array.isArray(value)) {
-    const items = value
-      .filter((item) => item !== undefined && item !== null)
-      .map((item) => String(item).trim())
-      .filter(Boolean);
-    return items.length > 0 ? items.join("; ") : null;
-  }
-  if (typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-  return value;
-}, z.string().nullable());
-const ClinicalHistorySchema = z.object({
-  age: slotSchema,
-  sex: slotSchema,
-  chief_complaint: slotSchema,
-  current_illness: slotSchema,
-  past_medical_history: slotSchema,
-  surgeries: slotSchema,
-  allergies: slotSchema,
-  current_medications: slotSchema,
-  family_history: slotSchema,
-  review_of_systems: slotSchema,
-  physical_exam: slotSchema,
-  assessment: slotSchema,
-});
-const PartialClinicalHistorySchema = ClinicalHistorySchema.partial();
-
-type ClinicalHistory = z.infer<typeof ClinicalHistorySchema>;
-
 type LabStream = {
   ffmpeg: ChildProcess;
   endCall: () => void;
-};
-
-const emptyClinicalHistory: ClinicalHistory = {
-  age: null,
-  sex: null,
-  chief_complaint: null,
-  current_illness: null,
-  past_medical_history: null,
-  surgeries: null,
-  allergies: null,
-  current_medications: null,
-  family_history: null,
-  review_of_systems: null,
-  physical_exam: null,
-  assessment: null,
 };
 
 let activeStream: LabStream | null = null;
@@ -100,11 +69,6 @@ const pendingFinals: string[] = [];
 function logLab(message: string, data?: unknown): void {
   const suffix = data === undefined ? "" : ` ${JSON.stringify(data)}`;
   console.log(`[Lab06] ${message}${suffix}`);
-  io.emit("debug:log", {
-    at: new Date().toISOString(),
-    message,
-    data,
-  });
 }
 
 const app = express();
@@ -126,50 +90,18 @@ app.get("/", (_req, res) => {
   res.type("html").send(renderHtml());
 });
 
-function extractJsonObject(content: string): unknown {
-  try {
-    return JSON.parse(content);
-  } catch {
-    const firstBrace = content.indexOf("{");
-    const lastBrace = content.lastIndexOf("}");
-    if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
-      throw new Error("Ollama response does not contain a JSON object.");
-    }
+function applyClinicalTermCorrections(text: string): string {
+  const result = normalizeClinicalTerms(text);
 
-    return JSON.parse(content.slice(firstBrace, lastBrace + 1));
-  }
-}
-
-function parseClinicalHistory(content: string): ClinicalHistory {
-  const parsed = extractJsonObject(content);
-  const candidate =
-    typeof parsed === "object" &&
-    parsed !== null &&
-    "current_slots" in parsed &&
-    typeof (parsed as { current_slots?: unknown }).current_slots === "object" &&
-    (parsed as { current_slots?: unknown }).current_slots !== null
-      ? (parsed as { current_slots: unknown }).current_slots
-      : parsed;
-
-  const partial = PartialClinicalHistorySchema.parse(candidate);
-  const merged: ClinicalHistory = { ...clinicalHistory };
-
-  for (const [key, value] of Object.entries(partial) as [
-    keyof ClinicalHistory,
-    string | null,
-  ][]) {
-    if (value === null && merged[key] !== null) {
-      logLab("ignored null overwrite", {
-        slot: key,
-        existing: merged[key],
-      });
-      continue;
-    }
-
-    merged[key] = value;
+  if (result.text !== text) {
+    logLab("clinical term correction", {
+      original: text,
+      corrected: result.text,
+      corrections: result.corrections,
+    });
   }
 
-  return ClinicalHistorySchema.parse(merged);
+  return result.text;
 }
 
 async function extractClinicalHistory(finalText: string): Promise<void> {
@@ -199,21 +131,7 @@ async function extractClinicalHistory(finalText: string): Promise<void> {
           messages: [
             {
               role: "system",
-              content: [
-                "Eres un extractor de historia clinica.",
-                "Recibiras la transcripcion acumulada de una entrevista medica en espanol y el estado actual de slots.",
-                "Actualiza los slots solo con informacion dicha explicitamente.",
-                "No inventes datos.",
-                "Si un dato no esta presente, usa null.",
-                "Si un slot ya tenia valor y no hay contradiccion, conservalo.",
-                "Nunca reemplaces un slot existente con null si el nuevo turno no contradice ese dato.",
-                "Si el paciente menciona cirugia, operacion, apendice, apendicitis o apendicectomia, actualiza el slot surgeries.",
-                "Devuelve solamente JSON valido, sin Markdown y sin explicaciones.",
-                "Devuelve un objeto JSON plano. No anides la respuesta dentro de current_slots, slots, data ni ningun otro objeto.",
-                "Puedes devolver solo los slots que cambian o todos los slots.",
-                "Los slots validos son:",
-                "age, sex, chief_complaint, current_illness, past_medical_history, surgeries, allergies, current_medications, family_history, review_of_systems, physical_exam, assessment.",
-              ].join("\n"),
+              content: CLINICAL_HISTORY_SYSTEM_PROMPT,
             },
             {
               role: "user",
@@ -237,7 +155,15 @@ async function extractClinicalHistory(finalText: string): Promise<void> {
       }
 
       logLab("clinical extraction raw response", { content });
-      clinicalHistory = parseClinicalHistory(content);
+      const previousClinicalHistory = clinicalHistory;
+      clinicalHistory = applyClinicalFallbacks(
+        parseClinicalHistory(content, previousClinicalHistory, {
+          onIgnoredNullOverwrite: (event) =>
+            logLab("ignored null overwrite", event),
+        }),
+        latestFinal,
+        previousClinicalHistory
+      );
       logLab("clinical extraction parsed state", clinicalHistory);
       io.emit("clinical:update", {
         state: clinicalHistory,
@@ -338,10 +264,20 @@ function startRivaStream(): LabStream {
       if (!transcript) continue;
 
       if (result.is_final) {
-        finalTranscriptLog.push(transcript);
-        logLab("riva final transcript", { transcript });
-        io.emit("transcript:final", { text: transcript, at: Date.now() });
-        void extractClinicalHistory(transcript);
+        // Normalize common Riva clinical transcription errors before slot extraction.
+        const correctedTranscript = applyClinicalTermCorrections(transcript);
+        finalTranscriptLog.push(correctedTranscript);
+        logLab("riva final transcript", {
+          transcript,
+          correctedTranscript:
+            correctedTranscript === transcript ? undefined : correctedTranscript,
+        });
+        io.emit("transcript:final", {
+          text: correctedTranscript,
+          rawText: transcript,
+          at: Date.now(),
+        });
+        void extractClinicalHistory(correctedTranscript);
       } else {
         io.emit("transcript:partial", { text: transcript, at: Date.now() });
       }
@@ -415,188 +351,3 @@ process.on("SIGINT", () => {
   stopStream();
   server.close(() => process.exit(0));
 });
-
-function renderHtml(): string {
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Clinitic Lab 06</title>
-  <style>
-    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #101417; color: #e7edf0; }
-    header { padding: 18px 24px; border-bottom: 1px solid #263038; background: #151b20; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-    h1 { font-size: 18px; margin: 0; }
-    main { padding: 20px 24px; display: grid; grid-template-columns: 1fr 1.1fr; gap: 20px; }
-    button { border: 1px solid #4f8cff; background: #2563eb; color: white; height: 36px; padding: 0 14px; border-radius: 6px; cursor: pointer; font-weight: 600; }
-    button.secondary { background: #1b2329; color: #d8e0e4; border-color: #34414a; }
-    .meta { font-size: 12px; color: #95a3ad; display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
-    .panel { background: #151b20; border: 1px solid #263038; border-radius: 8px; min-height: 500px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 16px 40px rgba(0,0,0,0.22); }
-    .panel h2 { font-size: 14px; margin: 0; padding: 12px 14px; border-bottom: 1px solid #263038; background: #1a2228; display: flex; justify-content: space-between; gap: 12px; }
-    .stream { padding: 14px; overflow: auto; display: flex; flex-direction: column; gap: 10px; }
-    .item { border-left: 3px solid #64717b; padding: 8px 10px; background: #1b2329; border-radius: 4px; color: #dce5e9; }
-    .partial { color: #a8b4bc; }
-    .final { border-left-color: #4f8cff; }
-    .error { border-left-color: #ff6b6b; }
-    .small { font-size: 12px; color: #95a3ad; margin-top: 4px; }
-    .slots { padding: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; overflow: auto; }
-    .slot { border: 1px solid #2a353d; border-radius: 8px; padding: 10px; background: #1b2329; min-height: 68px; }
-    .slot label { display: block; font-size: 12px; color: #95a3ad; margin-bottom: 6px; }
-    .slot div { font-size: 14px; line-height: 1.35; }
-    .empty { color: #697780; font-style: italic; }
-    .debug { grid-column: 1 / -1; min-height: 260px; }
-    .debug pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; color: #b8c4cc; }
-    @media (max-width: 950px) { main { grid-template-columns: 1fr; } header { align-items: flex-start; flex-direction: column; } .slots { grid-template-columns: 1fr; } }
-  </style>
-</head>
-<body>
-  <header>
-    <div>
-      <h1>Clinitic Lab 06 - Clinical History Slots</h1>
-      <div class="meta" id="meta">Connecting...</div>
-    </div>
-    <div>
-      <button id="start">Start</button>
-      <button id="stop" class="secondary">Stop</button>
-      <button id="reset" class="secondary">Reset</button>
-    </div>
-  </header>
-  <main>
-    <section class="panel">
-      <h2>Riva Transcription <span id="clinicalStatus" class="small"></span></h2>
-      <div class="stream" id="transcripts"></div>
-    </section>
-    <section class="panel">
-      <h2>Clinical History Slots <span id="latency" class="small"></span></h2>
-      <div class="slots" id="slots"></div>
-    </section>
-    <section class="panel debug">
-      <h2>Debug Log</h2>
-      <div class="stream" id="debug"></div>
-    </section>
-  </main>
-  <script src="/socket.io/socket.io.js"></script>
-  <script>
-    const socket = io();
-    const meta = document.getElementById("meta");
-    const transcripts = document.getElementById("transcripts");
-    const slots = document.getElementById("slots");
-    const debug = document.getElementById("debug");
-    const latency = document.getElementById("latency");
-    const clinicalStatus = document.getElementById("clinicalStatus");
-    const start = document.getElementById("start");
-    const stop = document.getElementById("stop");
-    const reset = document.getElementById("reset");
-    let partialNode = null;
-
-    const slotLabels = {
-      age: "Age",
-      sex: "Sex",
-      chief_complaint: "Chief complaint",
-      current_illness: "Current illness",
-      past_medical_history: "Past medical history",
-      surgeries: "Surgeries",
-      allergies: "Allergies",
-      current_medications: "Current medications",
-      family_history: "Family history",
-      review_of_systems: "Review of systems",
-      physical_exam: "Physical exam",
-      assessment: "Assessment"
-    };
-
-    function addTranscript(className, text, detail) {
-      const node = document.createElement("div");
-      node.className = "item " + className;
-      node.textContent = text;
-      if (detail) {
-        const small = document.createElement("div");
-        small.className = "small";
-        small.textContent = detail;
-        node.appendChild(small);
-      }
-      transcripts.prepend(node);
-      return node;
-    }
-
-    function renderSlots(state) {
-      slots.innerHTML = "";
-      for (const key of Object.keys(slotLabels)) {
-        const slot = document.createElement("div");
-        slot.className = "slot";
-        const label = document.createElement("label");
-        label.textContent = slotLabels[key];
-        const value = document.createElement("div");
-        const current = state[key];
-        value.textContent = current || "Pending";
-        if (!current) value.className = "empty";
-        slot.appendChild(label);
-        slot.appendChild(value);
-        slots.appendChild(slot);
-      }
-    }
-
-    function addDebug(event) {
-      const node = document.createElement("div");
-      node.className = "item partial";
-      const pre = document.createElement("pre");
-      pre.textContent = "[" + event.at + "] " + event.message + (event.data === undefined ? "" : "\\n" + JSON.stringify(event.data, null, 2));
-      node.appendChild(pre);
-      debug.prepend(node);
-    }
-
-    start.onclick = () => socket.emit("lab:start");
-    stop.onclick = () => socket.emit("lab:stop");
-    reset.onclick = () => socket.emit("lab:reset");
-
-    socket.on("connection:status", (status) => {
-      meta.textContent = [
-        "Riva " + status.rivaAddress,
-        "audio index " + status.audioIndex,
-        "Ollama " + status.ollamaModel,
-        status.recording ? "recording" : "stopped"
-      ].join(" | ");
-    });
-
-    socket.on("lab:status", (status) => {
-      addTranscript("partial", status.recording ? "Recording started" : "Recording stopped");
-    });
-
-    socket.on("transcript:partial", (event) => {
-      if (!partialNode) partialNode = addTranscript("partial", event.text);
-      partialNode.textContent = event.text;
-    });
-
-    socket.on("transcript:final", (event) => {
-      partialNode = null;
-      addTranscript("final", event.text, "FINAL");
-    });
-
-    socket.on("transcript:reset", () => {
-      partialNode = null;
-      transcripts.innerHTML = "";
-      latency.textContent = "";
-      clinicalStatus.textContent = "";
-    });
-
-    socket.on("clinical:status", (event) => {
-      clinicalStatus.textContent = event.status === "extracting" ? "Extracting..." : "";
-    });
-
-    socket.on("clinical:update", (event) => {
-      renderSlots(event.state);
-      latency.textContent = event.elapsedMs ? event.elapsedMs + " ms" : "";
-    });
-
-    socket.on("clinical:error", (event) => {
-      addTranscript("error", event.error, "clinical extraction error");
-    });
-
-    socket.on("debug:log", addDebug);
-
-    socket.on("system:log", (event) => {
-      addTranscript(event.level === "error" ? "error" : "partial", event.message);
-    });
-  </script>
-</body>
-</html>`;
-}
