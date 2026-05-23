@@ -6,6 +6,10 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/app.ts",
     "test:riva:dual-mic": "ts-node-dev --transpile-only --exit-child src/tools/riva-dual-mic-smoke.ts",
+    "test:riva:single-mic": "ts-node-dev --transpile-only --exit-child src/tools/riva-single-mic-smoke.ts",
+    "test:riva:single-mic:ollama": "ts-node-dev --transpile-only --exit-child src/tools/riva-single-mic-ollama-lab.ts",
+    "test:riva:single-mic:ollama-chat": "ts-node-dev --transpile-only --exit-child src/tools/riva-single-mic-ollama-basic-chat.ts",
+    "test:riva:single-mic:ollama-ui": "ts-node-dev --transpile-only --exit-child src/tools/riva-single-mic-ollama-ui-lab.ts",
     "build": "tsc",
     "start": "node dist/app.js"
   },

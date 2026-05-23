@@ -201,11 +201,348 @@ If doctor and patient produce similar text within a short window:
   mark the other one as crosstalk_ignored
 ```
 
+## Lab 02 - Riva Transcription With One Microphone
+
+### Goal
+
+Validate a simpler live transcription path using only one microphone. This lab does not distinguish doctor from patient; it only confirms that one local audio input can be streamed continuously to Riva and transcribed.
+
+Default input for this lab:
+
+```txt
+AVFoundation audio index 1 = Micrófono externo
+```
+
+### Lab Architecture
+
+```txt
+[Mac Studio]
+  └─ ffmpeg / AVFoundation audio index 1 -> PCM s16le 16 kHz -> Riva stream
+
+[Ubuntu Server]
+  └─ NVIDIA Riva ASR gRPC at 192.168.1.205:50051
+```
+
+### Relevant File
+
+```txt
+src/tools/riva-single-mic-smoke.ts
+```
+
+### Run Continuous Single-Mic Transcription
+
+```bash
+RIVA_ADDRESS=192.168.1.205:50051 \
+RIVA_LANGUAGE_CODE=es-en-US \
+pnpm run test:riva:single-mic
+```
+
+The process keeps running until `Ctrl+C` is pressed.
+
+Expected output:
+
+```txt
+Starting single mic Riva smoke test
+RIVA_ADDRESS=192.168.1.205:50051
+RIVA_LANGUAGE_CODE=es-en-US
+AVFoundation audio index=1
+
+Speak into the microphone. Press Ctrl+C to stop.
+[FINAL] Esta es una prueba de transcripcion con un solo microfono.
+```
+
+### Change Input Microphone
+
+Use `AUDIO_INDEX` to select a different AVFoundation input:
+
+```bash
+AUDIO_INDEX=0 \
+RIVA_ADDRESS=192.168.1.205:50051 \
+RIVA_LANGUAGE_CODE=es-en-US \
+pnpm run test:riva:single-mic
+```
+
+## Lab 03 - Riva Final Transcripts Sent To Ollama
+
+### Goal
+
+Validate the first end-to-end AI pipeline:
+
+```txt
+single microphone -> Riva ASR -> final transcript -> Ollama LLM
+```
+
+This lab still uses only one microphone and does not distinguish doctor from patient. Whenever Riva emits a `FINAL` transcript, the text is sent to Ollama. Ollama returns a compact JSON analysis in Spanish, and the response is validated with Zod before being treated as usable output.
+
+### Lab Architecture
+
+```txt
+[Mac Studio]
+  └─ ffmpeg / AVFoundation audio index 1
+        ↓
+     PCM s16le 16 kHz
+        ↓
+     Riva StreamingRecognize
+        ↓
+     FINAL transcript
+        ↓
+     Ollama /api/chat
+
+[Ubuntu Server]
+  ├─ NVIDIA Riva ASR gRPC at 192.168.1.205:50051
+  └─ Ollama HTTP API at http://192.168.1.205:11434
+```
+
+### Relevant File
+
+```txt
+src/tools/riva-single-mic-ollama-lab.ts
+```
+
+### Available Ollama Models On The Server
+
+```txt
+mistral-small:22b
+mistral-nemo:latest
+mistral-small3.2:latest
+mistral-small:latest
+mistral:latest
+```
+
+Default model for this lab:
+
+```txt
+mistral:latest
+```
+
+### Run Riva + Ollama Lab
+
+```bash
+RIVA_ADDRESS=192.168.1.205:50051 \
+RIVA_LANGUAGE_CODE=es-en-US \
+OLLAMA_BASE_URL=http://192.168.1.205:11434 \
+OLLAMA_MODEL=mistral:latest \
+pnpm run test:riva:single-mic:ollama
+```
+
+The process keeps running until `Ctrl+C` is pressed.
+
+Expected output:
+
+```txt
+Starting single mic Riva + Ollama lab
+RIVA_ADDRESS=192.168.1.205:50051
+RIVA_LANGUAGE_CODE=es-en-US
+AUDIO_INDEX=1
+OLLAMA_BASE_URL=http://192.168.1.205:11434
+OLLAMA_MODEL=mistral:latest
+
+Speak into the microphone. Press Ctrl+C to stop.
+[Riva FINAL] El paciente refiere dolor de cabeza desde ayer.
+[Ollama] sending: El paciente refiere dolor de cabeza desde ayer.
+[Ollama] validated: {"text":"El paciente refiere dolor de cabeza desde ayer.","summary":"Dolor de cabeza desde ayer.","possible_clinical_relevance":"symptom","requires_doctor_review":true}
+```
+
+Validated JSON schema:
+
+```json
+{
+  "text": "string",
+  "summary": "string",
+  "possible_clinical_relevance": "none | symptom | medication | recommendation | history | procedure | diagnosis | follow_up | other",
+  "requires_doctor_review": true
+}
+```
+
+### Change Model Or Microphone
+
+Use a larger model:
+
+```bash
+OLLAMA_MODEL=mistral-nemo:latest \
+RIVA_ADDRESS=192.168.1.205:50051 \
+OLLAMA_BASE_URL=http://192.168.1.205:11434 \
+pnpm run test:riva:single-mic:ollama
+```
+
+Use another microphone:
+
+```bash
+AUDIO_INDEX=0 \
+RIVA_ADDRESS=192.168.1.205:50051 \
+OLLAMA_BASE_URL=http://192.168.1.205:11434 \
+pnpm run test:riva:single-mic:ollama
+```
+
+### Lab 03 Findings To Validate
+
+- Riva `FINAL` events are usable as LLM trigger points.
+- Ollama latency must be measured per model.
+- Final utterances should be queued so the ASR stream does not block while the LLM responds.
+- The LLM response is validated with a strict Zod schema before being used as lab output.
+
+## Lab 04 - Basic Riva To Ollama Chat
+
+### Goal
+
+Validate the simplest possible real-time conversation loop with the model:
+
+```txt
+single microphone -> Riva FINAL transcript -> Ollama request -> raw model response
+```
+
+This lab intentionally has no clinical prompt, no JSON schema, no Zod validation, and no document extraction. It is meant to measure basic response times and observe how the selected Ollama model behaves in a live loop.
+
+### Relevant File
+
+```txt
+src/tools/riva-single-mic-ollama-basic-chat.ts
+```
+
+### Run Basic Chat Lab
+
+```bash
+RIVA_ADDRESS=192.168.1.205:50051 \
+RIVA_LANGUAGE_CODE=es-en-US \
+OLLAMA_BASE_URL=http://192.168.1.205:11434 \
+OLLAMA_MODEL=mistral:latest \
+pnpm run test:riva:single-mic:ollama-chat
+```
+
+The process keeps running until `Ctrl+C` is pressed.
+
+Expected output:
+
+```txt
+Starting basic Riva + Ollama chat lab
+RIVA_ADDRESS=192.168.1.205:50051
+RIVA_LANGUAGE_CODE=es-en-US
+AUDIO_INDEX=1
+OLLAMA_BASE_URL=http://192.168.1.205:11434
+OLLAMA_MODEL=mistral:latest
+
+Speak into the microphone. Press Ctrl+C to stop.
+[Riva FINAL] Hola, quien eres?
+[Ollama] request: Hola, quien eres?
+[Ollama] response (1240 ms): Soy un modelo de lenguaje...
+```
+
+### Change Model Or Microphone
+
+```bash
+AUDIO_INDEX=0 \
+OLLAMA_MODEL=mistral-nemo:latest \
+RIVA_ADDRESS=192.168.1.205:50051 \
+OLLAMA_BASE_URL=http://192.168.1.205:11434 \
+pnpm run test:riva:single-mic:ollama-chat
+```
+
+### Lab 04 Findings To Validate
+
+- Time from Riva `FINAL` to full Ollama response.
+- Latency differences between available Ollama models.
+- Whether requests should be queued, interrupted, or allowed to overlap in later labs.
+- Whether the selected model follows spoken Spanish well without a system prompt.
+
+## Lab 05 - Browser UI For Riva + Ollama
+
+### Goal
+
+Validate the first browser-based UI for live transcription and LLM responses.
+
+This lab uses the approach defined in the spec:
+
+```txt
+Node backend -> Socket.IO -> browser UI
+```
+
+React is not used yet. The UI is plain HTML served by Express so the lab stays small and focused on event flow. React can be introduced later once the realtime contract is stable.
+
+### Lab Architecture
+
+```txt
+[Mac Studio]
+  ├─ Express serves browser UI
+  ├─ Socket.IO emits transcript and LLM events
+  └─ ffmpeg captures AVFoundation audio index 0
+        ↓
+     Riva StreamingRecognize
+        ↓
+     transcript:partial / transcript:final
+        ↓
+     Ollama /api/chat with mistral-nemo:latest
+        ↓
+     llm:request / llm:response
+
+[Browser]
+  ├─ Riva transcription panel
+  └─ Ollama response panel
+```
+
+### Relevant File
+
+```txt
+src/tools/riva-single-mic-ollama-ui-lab.ts
+```
+
+### Run UI Lab
+
+```bash
+PORT=3000 \
+RIVA_ADDRESS=192.168.1.205:50051 \
+RIVA_LANGUAGE_CODE=es-en-US \
+AUDIO_INDEX=0 \
+OLLAMA_BASE_URL=http://192.168.1.205:11434 \
+OLLAMA_MODEL=mistral-nemo:latest \
+pnpm run test:riva:single-mic:ollama-ui
+```
+
+Open:
+
+```txt
+http://localhost:3000
+```
+
+The browser has Start and Stop buttons. Start begins microphone capture, Riva streaming, and Ollama requests for each final transcript.
+
+### Socket.IO Events Used
+
+Server to browser:
+
+```txt
+connection:status
+lab:status
+transcript:partial
+transcript:final
+llm:request
+llm:response
+llm:error
+system:log
+```
+
+Browser to server:
+
+```txt
+lab:start
+lab:stop
+```
+
+### Lab 05 Findings To Validate
+
+- The browser can display Riva partial/final transcripts in real time.
+- The browser can display Ollama responses without blocking the ASR stream.
+- Socket.IO is enough for this stage; React is optional until the UI becomes more complex.
+- `mistral-nemo:latest` should be compared against smaller models for latency.
+
 ## Scripts
 
 ```bash
 pnpm run build
 pnpm run test:riva:dual-mic
+pnpm run test:riva:single-mic
+pnpm run test:riva:single-mic:ollama
+pnpm run test:riva:single-mic:ollama-chat
+pnpm run test:riva:single-mic:ollama-ui
 ```
 
 ## Documentation
