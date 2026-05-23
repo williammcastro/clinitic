@@ -534,6 +534,113 @@ lab:stop
 - Socket.IO is enough for this stage; React is optional until the UI becomes more complex.
 - `mistral-nemo:latest` should be compared against smaller models for latency.
 
+## Lab 06 - Clinical History Slots UI
+
+### Goal
+
+Validate the first UI that turns live Riva transcription into structured clinical history slots.
+
+The browser shows only:
+
+- Riva transcription.
+- Clinical history slots.
+
+Slots start empty and are updated incrementally as the patient speaks and Riva emits final transcripts.
+
+### Lab Architecture
+
+```txt
+[Mac Studio]
+  ├─ Express serves browser UI
+  ├─ Socket.IO emits transcript and clinical state events
+  └─ ffmpeg captures AVFoundation audio index 0
+        ↓
+     Riva StreamingRecognize
+        ↓
+     transcript:partial / transcript:final
+        ↓
+     Ollama extraction with accumulated transcript
+        ↓
+     clinical:update
+
+[Browser]
+  ├─ Riva transcription card
+  └─ Clinical history slots card
+```
+
+### Relevant File
+
+```txt
+src/tools/riva-single-mic-clinical-history-ui-lab.ts
+```
+
+### Slots
+
+```txt
+age
+sex
+chief_complaint
+current_illness
+past_medical_history
+surgeries
+allergies
+current_medications
+family_history
+review_of_systems
+physical_exam
+assessment
+```
+
+### Run Clinical History UI Lab
+
+```bash
+PORT=3000 \
+RIVA_ADDRESS=192.168.1.205:50051 \
+RIVA_LANGUAGE_CODE=es-en-US \
+AUDIO_INDEX=0 \
+OLLAMA_BASE_URL=http://192.168.1.205:11434 \
+OLLAMA_MODEL=mistral-nemo:latest \
+pnpm run test:riva:single-mic:history-ui
+```
+
+Open:
+
+```txt
+http://localhost:3000
+```
+
+### Socket.IO Events Used
+
+Server to browser:
+
+```txt
+connection:status
+lab:status
+transcript:partial
+transcript:final
+transcript:reset
+clinical:status
+clinical:update
+clinical:error
+system:log
+```
+
+Browser to server:
+
+```txt
+lab:start
+lab:stop
+lab:reset
+```
+
+### Lab 06 Findings To Validate
+
+- Riva final transcripts can trigger incremental clinical history extraction.
+- The browser can show an initially empty clinical history and update slots in place.
+- Accumulated transcript context helps preserve previously extracted values.
+- The extractor accepts partial JSON updates and merges them into the current slot state.
+- Later labs should add evidence per slot, confidence, doctor review state, and edit controls.
+
 ## Scripts
 
 ```bash
@@ -543,6 +650,7 @@ pnpm run test:riva:single-mic
 pnpm run test:riva:single-mic:ollama
 pnpm run test:riva:single-mic:ollama-chat
 pnpm run test:riva:single-mic:ollama-ui
+pnpm run test:riva:single-mic:history-ui
 ```
 
 ## Documentation

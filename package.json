@@ -10,6 +10,7 @@
     "test:riva:single-mic:ollama": "ts-node-dev --transpile-only --exit-child src/tools/riva-single-mic-ollama-lab.ts",
     "test:riva:single-mic:ollama-chat": "ts-node-dev --transpile-only --exit-child src/tools/riva-single-mic-ollama-basic-chat.ts",
     "test:riva:single-mic:ollama-ui": "ts-node-dev --transpile-only --exit-child src/tools/riva-single-mic-ollama-ui-lab.ts",
+    "test:riva:single-mic:history-ui": "ts-node-dev --transpile-only --exit-child src/tools/riva-single-mic-clinical-history-ui-lab.ts",
     "build": "tsc",
     "start": "node dist/app.js"
   },
