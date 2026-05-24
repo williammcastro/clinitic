@@ -34,11 +34,13 @@ let activeStream: RivaMicTranscriptionStream | null = null;
 let isExtracting = false;
 const pendingFinals: string[] = [];
 
+// Centraliza los logs de la app para distinguirlos de los logs de los labs.
 function logApp(message: string, data?: unknown): void {
   const suffix = data === undefined ? "" : ` ${JSON.stringify(data)}`;
   console.log(`[App] ${message}${suffix}`);
 }
 
+// Corrige terminos clinicos frecuentes que Riva puede transcribir mal antes de extraer slots.
 function normalizeTranscript(transcript: string): string {
   const result = normalizeClinicalTerms(transcript);
 
@@ -53,6 +55,7 @@ function normalizeTranscript(transcript: string): string {
   return result.text;
 }
 
+// Procesa los transcripts finales en cola para no bloquear el stream de audio mientras Ollama responde.
 async function extractClinicalHistory(finalText: string): Promise<void> {
   pendingFinals.push(finalText);
   if (isExtracting) return;
@@ -84,6 +87,7 @@ async function extractClinicalHistory(finalText: string): Promise<void> {
   io.emit("clinical:status", { status: "idle" });
 }
 
+// Inicia la captura del microfono, envia audio a Riva y conecta los eventos con la UI.
 function startTranscription(): void {
   if (activeStream) return;
 
@@ -92,7 +96,7 @@ function startTranscription(): void {
       io.emit("transcript:partial", { text: transcript, at: Date.now() });
     },
     onFinalTranscript: (transcript) => {
-      // Normalize common Riva clinical transcription errors before slot extraction.
+      // Normaliza errores clinicos comunes de Riva antes de extraer slots.
       const correctedTranscript = normalizeTranscript(transcript);
       session.addFinalTranscript(correctedTranscript);
       logApp("riva final transcript", {
@@ -115,6 +119,7 @@ function startTranscription(): void {
   io.emit("lab:status", { recording: true });
 }
 
+// Detiene el stream activo de Riva/ffmpeg y notifica a la UI.
 function stopTranscription(): void {
   if (!activeStream) return;
   activeStream.stop();
@@ -122,6 +127,7 @@ function stopTranscription(): void {
   io.emit("lab:status", { recording: false });
 }
 
+// Expone un endpoint simple para verificar configuracion y disponibilidad del servidor.
 app.get("/health", (_req, res) => {
   res.json({
     ok: true,
@@ -133,10 +139,12 @@ app.get("/health", (_req, res) => {
   });
 });
 
+// Sirve la UI local de transcripcion y slots clinicos.
 app.get("/", (_req, res) => {
   res.type("html").send(renderHtml());
 });
 
+// Registra los eventos en tiempo real que usa el navegador para controlar la consulta.
 io.on("connection", (socket) => {
   socket.emit("connection:status", {
     connected: true,
@@ -156,6 +164,7 @@ io.on("connection", (socket) => {
 
   socket.on("lab:stop", stopTranscription);
 
+  // Limpia la consulta actual sin reiniciar el servidor ni cerrar la pagina.
   socket.on("lab:reset", () => {
     session.reset();
     pendingFinals.length = 0;
@@ -167,6 +176,7 @@ io.on("connection", (socket) => {
   });
 });
 
+// Levanta el servidor HTTP y muestra la configuracion efectiva al arrancar.
 server.listen(appConfig.port, () => {
   console.log(`Clinitic app listening at http://localhost:${appConfig.port}`);
   console.log(`RIVA_ADDRESS=${appConfig.rivaAddress}`);
@@ -176,6 +186,7 @@ server.listen(appConfig.port, () => {
   console.log(`OLLAMA_MODEL=${appConfig.ollamaModel}`);
 });
 
+// Cierra el stream de audio y el servidor cuando se baja con Ctrl+C.
 process.on("SIGINT", () => {
   stopTranscription();
   server.close(() => process.exit(0));

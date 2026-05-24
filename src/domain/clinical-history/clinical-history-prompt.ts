@@ -3,6 +3,7 @@ export const CLINICAL_HISTORY_SYSTEM_PROMPT = [
   "Recibiras la transcripcion acumulada de una entrevista medica en espanol y el estado actual de slots.",
   "Actualiza los slots solo con informacion dicha explicitamente.",
   "No inventes datos.",
+  "Si el turno es saludo, conversacion social o no contiene informacion clinica, devuelve {}.",
   "Si un dato no esta presente, usa null.",
   "Si un slot ya tenia valor y no hay contradiccion, conservalo.",
   "Nunca reemplaces un slot existente con null si el nuevo turno no contradice ese dato.",

@@ -1,6 +1,7 @@
 import axios from "axios";
 import { applyClinicalFallbacks } from "./clinical-fallbacks";
 import { CLINICAL_HISTORY_SYSTEM_PROMPT } from "./clinical-history-prompt";
+import { hasClinicalSignal } from "./clinical-signal";
 import { parseClinicalHistory } from "./parse-clinical-history";
 import type { ClinicalHistory } from "./schema";
 
@@ -29,6 +30,18 @@ export class ClinicalHistoryExtractor {
   ): Promise<ClinicalHistoryExtractionResult> {
     const startedAt = Date.now();
     this.options.log?.("clinical extraction request", payload);
+
+    if (!hasClinicalSignal(payload.latest_final_transcript)) {
+      this.options.log?.("clinical extraction skipped", {
+        reason: "latest transcript has no clinical signal",
+        latest_final_transcript: payload.latest_final_transcript,
+      });
+
+      return {
+        state: payload.current_slots,
+        elapsedMs: Date.now() - startedAt,
+      };
+    }
 
     const response = await axios.post(
       `${this.options.ollamaBaseUrl}/api/chat`,
