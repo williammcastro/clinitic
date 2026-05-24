@@ -20,4 +20,9 @@ export const conditionCorrections: ConditionCorrectionEntry[] = [
     pattern: /\bpresion alta\b/gi,
     replacement: "hipertensión arterial",
   },
+  {
+    label: "fibrilacion auricular",
+    pattern: /\b(vibracion auricular|fibrilacion auricular)\b/gi,
+    replacement: "fibrilación auricular",
+  },
 ];

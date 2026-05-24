@@ -20,7 +20,16 @@ export const medicationDictionary: MedicationDictionaryEntry[] = [
   },
   {
     canonical: "levotiroxina",
-    variants: ["levo tiroxina", "eutirox", "utirox", "tolex"],
+    variants: [
+      "levo tiroxina",
+      "leo tiroxina",
+      "leva tiroxina",
+      "le va tiroxina",
+      "tiroxina",
+      "eutirox",
+      "utirox",
+      "tolex",
+    ],
     category: "hormona tiroidea",
     requiresContext: true,
   },

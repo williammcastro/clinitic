@@ -61,10 +61,20 @@ export class ClinicalHistoryExtractor {
 
     this.options.log?.("clinical extraction raw response", { content });
     const previousState = payload.current_slots;
-    const parsedState = parseClinicalHistory(content, previousState, {
-      onIgnoredNullOverwrite: (event) =>
-        this.options.log?.("ignored null overwrite", event),
-    });
+    let parsedState = previousState;
+
+    try {
+      parsedState = parseClinicalHistory(content, previousState, {
+        onIgnoredNullOverwrite: (event) =>
+          this.options.log?.("ignored null overwrite", event),
+      });
+    } catch (error) {
+      this.options.log?.("clinical extraction parse error", {
+        error: error instanceof Error ? error.message : String(error),
+        fallback: "using previous state and applying transcript fallbacks",
+      });
+    }
+
     const state = applyClinicalFallbacks(
       parsedState,
       payload.latest_final_transcript,

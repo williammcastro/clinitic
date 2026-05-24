@@ -48,12 +48,13 @@ export function normalizeSlotValue(
   value: string | null
 ): string | null {
   if (value === null) return null;
+  const repairedValue = repairMojibake(value);
 
   if (slot !== "surgeries") {
-    return value.trim() || null;
+    return repairedValue.trim() || null;
   }
 
-  const items = value
+  const items = repairedValue
     .split(/[;,]/)
     .map((item) => normalizeSurgeryItem(item))
     .filter((item): item is string => item !== null);
@@ -72,8 +73,11 @@ export function normalizeSlotValue(
   return deduped.length > 0 ? deduped.join("; ") : null;
 }
 
-function normalizeSurgeryItem(value: string): string | null {
-  const cleaned = value.trim().replace(/_/g, " ").replace(/\s+/g, " ");
+export function normalizeSurgeryItem(value: string): string | null {
+  const cleaned = repairMojibake(value)
+    .trim()
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ");
   if (!cleaned) return null;
 
   const normalized = normalizeForMatch(cleaned);
@@ -89,9 +93,31 @@ function normalizeSurgeryItem(value: string): string | null {
   if (/\b(stomach surgery|cirugia stomach|estomago)\b/.test(normalized)) {
     return "cirugía de estómago";
   }
-  if (/\b(bypass gastric|gastric bypass|bypass gastrico)\b/.test(normalized)) {
+  if (
+    /\b(bypa gastrico|by pas gastrico|by pass gastrico|bypass gastric|gastric bypass|bypass gastrico)\b/.test(
+      normalized
+    )
+  ) {
     return "bypass gástrico";
   }
 
   return cleaned;
+}
+
+function repairMojibake(value: string): string {
+  return value
+    .replace(/Ã¡/g, "á")
+    .replace(/Ã©/g, "é")
+    .replace(/Ã­/g, "í")
+    .replace(/Ã³/g, "ó")
+    .replace(/Ãº/g, "ú")
+    .replace(/Ã±/g, "ñ")
+    .replace(/Ã¼/g, "ü")
+    .replace(/Ã/g, "Á")
+    .replace(/Ã‰/g, "É")
+    .replace(/Ã/g, "Í")
+    .replace(/Ã“/g, "Ó")
+    .replace(/Ãš/g, "Ú")
+    .replace(/Ã‘/g, "Ñ")
+    .replace(/vesÃcula/gi, "vesícula");
 }
