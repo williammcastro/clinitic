@@ -18,10 +18,22 @@ type ParseClinicalHistoryOptions = {
 const additiveSlots = new Set<keyof ClinicalHistory>([
   "past_medical_history",
   "surgeries",
+  "tobacco_use",
+  "alcohol_use",
+  "recreational_drug_use",
   "allergies",
+  "medication_hypersensitivity",
+  "food_hypersensitivity",
   "current_medications",
+  "hospitalizations",
+  "vaccination_history",
   "family_history",
+  "previous_abnormal_exams",
+  "previous_abnormal_exam_dates",
   "review_of_systems",
+  "physical_exam",
+  "head_to_toe_exam",
+  "housing_environment",
 ]);
 
 function extractJsonObject(content: string): unknown {

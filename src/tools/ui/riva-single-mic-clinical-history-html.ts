@@ -4,7 +4,7 @@ export function renderHtml(): string {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Clinitic Lab 06</title>
+  <title>Clinitic Clinical Data Extraction</title>
   <style>
     body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #101417; color: #e7edf0; }
     header { padding: 18px 24px; border-bottom: 1px solid #263038; background: #151b20; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
@@ -21,18 +21,21 @@ export function renderHtml(): string {
     .final { border-left-color: #4f8cff; }
     .error { border-left-color: #ff6b6b; }
     .small { font-size: 12px; color: #95a3ad; margin-top: 4px; }
-    .slots { padding: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; overflow: auto; }
+    .slots { padding: 14px; display: flex; flex-direction: column; gap: 16px; overflow: auto; }
+    .category { border: 1px solid #2a353d; border-radius: 8px; background: #182027; overflow: hidden; }
+    .category h3 { margin: 0; padding: 10px 12px; font-size: 13px; color: #d7e0e5; background: #202a32; border-bottom: 1px solid #2a353d; }
+    .category-grid { padding: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .slot { border: 1px solid #2a353d; border-radius: 8px; padding: 10px; background: #1b2329; min-height: 68px; }
     .slot label { display: block; font-size: 12px; color: #95a3ad; margin-bottom: 6px; }
     .slot div { font-size: 14px; line-height: 1.35; }
     .empty { color: #697780; font-style: italic; }
-    @media (max-width: 950px) { main { grid-template-columns: 1fr; } header { align-items: flex-start; flex-direction: column; } .slots { grid-template-columns: 1fr; } }
+    @media (max-width: 950px) { main { grid-template-columns: 1fr; } header { align-items: flex-start; flex-direction: column; } .category-grid { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
   <header>
     <div>
-      <h1>Clinitic Lab 06 - Clinical History Slots</h1>
+      <h1>Clinitic - Clinical Data Extraction</h1>
       <div class="meta" id="meta">Connecting...</div>
     </div>
     <div>
@@ -47,7 +50,7 @@ export function renderHtml(): string {
       <div class="stream" id="transcripts"></div>
     </section>
     <section class="panel">
-      <h2>Clinical History Slots <span id="latency" class="small"></span></h2>
+      <h2>Clinical Data Extraction <span id="latency" class="small"></span></h2>
       <div class="slots" id="slots"></div>
     </section>
   </main>
@@ -64,20 +67,98 @@ export function renderHtml(): string {
     const reset = document.getElementById("reset");
     let partialNode = null;
 
-    const slotLabels = {
-      age: "Age",
-      sex: "Sex",
-      chief_complaint: "Chief complaint",
-      current_illness: "Current illness",
-      past_medical_history: "Past medical history",
-      surgeries: "Surgeries",
-      allergies: "Allergies",
-      current_medications: "Current medications",
-      family_history: "Family history",
-      review_of_systems: "Review of systems",
-      physical_exam: "Physical exam",
-      assessment: "Assessment"
-    };
+    const slotCategories = [
+      {
+        title: "Identificación",
+        fields: [
+          ["age", "Edad"],
+          ["sex", "Sexo"]
+        ]
+      },
+      {
+        title: "Antecedentes patológicos",
+        fields: [
+          ["past_medical_history", "Enfermedades que sufre"],
+          ["family_history", "Antecedentes familiares"]
+        ]
+      },
+      {
+        title: "Antecedentes quirúrgicos",
+        fields: [
+          ["surgeries", "Cirugías"]
+        ]
+      },
+      {
+        title: "Antecedentes toxicológicos",
+        fields: [
+          ["tobacco_use", "Fuma"],
+          ["alcohol_use", "Consume licor"],
+          ["recreational_drug_use", "Consume drogas"]
+        ]
+      },
+      {
+        title: "Antecedentes farmacológicos",
+        fields: [
+          ["current_medications", "Medicamentos que toma"]
+        ]
+      },
+      {
+        title: "Hipersensibilidad",
+        fields: [
+          ["medication_hypersensitivity", "Medicamentos"],
+          ["food_hypersensitivity", "Alimentos"],
+          ["allergies", "Otras alergias"]
+        ]
+      },
+      {
+        title: "Hospitalizaciones y vacunación",
+        fields: [
+          ["hospitalizations", "Motivos de hospitalización"],
+          ["vaccination_history", "Vacunas que tiene"]
+        ]
+      },
+      {
+        title: "Motivo de consulta principal",
+        fields: [
+          ["chief_complaint", "Motivo de consulta"],
+          ["current_illness", "Descripción detallada"]
+        ]
+      },
+      {
+        title: "Revisión de exámenes previos",
+        fields: [
+          ["previous_abnormal_exams", "Exámenes con variables fuera de rango"],
+          ["previous_abnormal_exam_dates", "Fechas de exámenes alterados"]
+        ]
+      },
+      {
+        title: "Examen físico",
+        fields: [
+          ["blood_pressure", "Presión arterial"],
+          ["pulse", "Pulso"],
+          ["temperature", "Temperatura"],
+          ["oxygen_saturation", "SaO2"],
+          ["glucometry", "Glucometría"],
+          ["head_to_toe_exam", "Cabeza a pies"],
+          ["physical_exam", "Otros hallazgos"]
+        ]
+      },
+      {
+        title: "Datos extra relevantes",
+        fields: [
+          ["housing_environment", "Sitio de vivienda y ambiente"],
+          ["rural_urban", "Rural / urbano"],
+          ["occupation", "Ocupación"]
+        ]
+      },
+      {
+        title: "Evaluación",
+        fields: [
+          ["review_of_systems", "Revisión por sistemas"],
+          ["assessment", "Assessment"]
+        ]
+      }
+    ];
 
     function addTranscript(className, text, detail) {
       const node = document.createElement("div");
@@ -98,18 +179,31 @@ export function renderHtml(): string {
 
     function renderSlots(state) {
       slots.innerHTML = "";
-      for (const key of Object.keys(slotLabels)) {
-        const slot = document.createElement("div");
-        slot.className = "slot";
-        const label = document.createElement("label");
-        label.textContent = slotLabels[key];
-        const value = document.createElement("div");
-        const current = state[key];
-        value.textContent = current || "Pending";
-        if (!current) value.className = "empty";
-        slot.appendChild(label);
-        slot.appendChild(value);
-        slots.appendChild(slot);
+      for (const category of slotCategories) {
+        const categoryNode = document.createElement("section");
+        categoryNode.className = "category";
+        const title = document.createElement("h3");
+        title.textContent = category.title;
+        const grid = document.createElement("div");
+        grid.className = "category-grid";
+
+        for (const [key, labelText] of category.fields) {
+          const slot = document.createElement("div");
+          slot.className = "slot";
+          const label = document.createElement("label");
+          label.textContent = labelText;
+          const value = document.createElement("div");
+          const current = state[key];
+          value.textContent = current || "Pending";
+          if (!current) value.className = "empty";
+          slot.appendChild(label);
+          slot.appendChild(value);
+          grid.appendChild(slot);
+        }
+
+        categoryNode.appendChild(title);
+        categoryNode.appendChild(grid);
+        slots.appendChild(categoryNode);
       }
     }
 
