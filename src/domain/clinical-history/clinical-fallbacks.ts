@@ -28,6 +28,18 @@ export function applyClinicalFallbacks(
       normalized
     );
 
+  const ageMatch = normalized.match(/\b(?:paciente\s*)?(\d{1,3})\s*anos\b/);
+  if (ageMatch) {
+    merged.age = ageMatch[1];
+  }
+
+  if (/\b(femenino|mujer)\b/.test(normalized)) {
+    merged.sex = "femenino";
+  }
+  if (/\b(masculino|hombre)\b/.test(normalized)) {
+    merged.sex = "masculino";
+  }
+
   if (familyConditionStatement) {
     const familyConditions: string[] = [];
 

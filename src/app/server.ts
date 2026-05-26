@@ -7,6 +7,7 @@ import { ConsultationSession } from "./consultation-session";
 import { renderHtml } from "./ui/clinical-history-html";
 import { ClinicalHistoryExtractor } from "../domain/clinical-history/clinical-history-extractor";
 import { normalizeClinicalTerms } from "../domain/clinical-dictionaries/normalize-clinical-terms";
+import { normalizeForMatch } from "../domain/clinical-history/slot-normalization";
 import {
   RivaMicTranscriber,
   type RivaMicTranscriptionStream,
@@ -33,6 +34,8 @@ const clinicalHistoryExtractor = new ClinicalHistoryExtractor({
 let activeStream: RivaMicTranscriptionStream | null = null;
 let isExtracting = false;
 const pendingFinals: string[] = [];
+const previousExamsDictationTarget = "previous_abnormal_results";
+const physicalExamDictationTarget = "head_to_toe_exam";
 
 // Centraliza los logs de la app para distinguirlos de los logs de los labs.
 function logApp(message: string, data?: unknown): void {
@@ -53,6 +56,104 @@ function normalizeTranscript(transcript: string): string {
   }
 
   return result.text;
+}
+
+// Detecta frases de voz para activar o finalizar dictado dirigido.
+function getDictationCommand(
+  transcript: string
+):
+  | "start_previous_exams"
+  | "stop_previous_exams"
+  | "start_physical_exam"
+  | "stop_physical_exam"
+  | null {
+  const normalized = normalizeForMatch(transcript);
+
+  if (/\b(habilita|activar|activa|inicia|iniciar)\b.*\brevision\b.*\bexamenes previos\b/.test(normalized)) {
+    return "start_previous_exams";
+  }
+
+  if (/\b(finalizar|finaliza|terminar|termina|cerrar|cierra)\b.*\brevision\b.*\bexamenes previos\b/.test(normalized)) {
+    return "stop_previous_exams";
+  }
+
+  if (/\b(habilita|habilitar|activar|activa|inicia|iniciar)\b.*\bexamen fisico\b/.test(normalized)) {
+    return "start_physical_exam";
+  }
+
+  if (/\b(finalizar|finaliza|terminar|termina|cerrar|cierra)\b.*\bexamen fisico\b/.test(normalized)) {
+    return "stop_physical_exam";
+  }
+
+  return null;
+}
+
+// Notifica a la UI cual seccion esta en modo dictado dirigido.
+function emitDictationStatus(): void {
+  io.emit("dictation:status", {
+    activeTarget: session.activeDictationTarget,
+  });
+}
+
+function startPreviousExamsDictation(): void {
+  session.startDictation(previousExamsDictationTarget);
+  logApp("dictation started", { target: previousExamsDictationTarget });
+  emitDictationStatus();
+}
+
+function startPhysicalExamDictation(): void {
+  session.startDictation(physicalExamDictationTarget);
+  logApp("dictation started", { target: physicalExamDictationTarget });
+  emitDictationStatus();
+}
+
+function stopCurrentDictation(): void {
+  if (!session.activeDictationTarget) return;
+
+  const previousTarget = session.activeDictationTarget;
+  session.stopDictation();
+  logApp("dictation stopped", { target: previousTarget });
+  emitDictationStatus();
+}
+
+// Maneja frases de control y dictado textual antes de enviar el turno a Ollama.
+function handleDirectedDictation(finalText: string): boolean {
+  const command = getDictationCommand(finalText);
+
+  if (command === "start_previous_exams") {
+    startPreviousExamsDictation();
+    return true;
+  }
+
+  if (command === "stop_previous_exams") {
+    stopCurrentDictation();
+    return true;
+  }
+
+  if (command === "start_physical_exam") {
+    startPhysicalExamDictation();
+    return true;
+  }
+
+  if (command === "stop_physical_exam") {
+    stopCurrentDictation();
+    return true;
+  }
+
+  if (session.activeDictationTarget) {
+    session.appendDictationText(session.activeDictationTarget, finalText);
+    logApp("dictation appended", {
+      target: session.activeDictationTarget,
+      text: finalText,
+    });
+    io.emit("clinical:update", {
+      state: session.clinicalHistory,
+      elapsedMs: 0,
+    });
+    return true;
+  }
+
+  return false;
 }
 
 // Procesa los transcripts finales en cola para no bloquear el stream de audio mientras Ollama responde.
@@ -98,7 +199,6 @@ function startTranscription(): void {
     onFinalTranscript: (transcript) => {
       // Normaliza errores clinicos comunes de Riva antes de extraer slots.
       const correctedTranscript = normalizeTranscript(transcript);
-      session.addFinalTranscript(correctedTranscript);
       logApp("riva final transcript", {
         transcript,
         correctedTranscript:
@@ -109,6 +209,12 @@ function startTranscription(): void {
         rawText: transcript,
         at: Date.now(),
       });
+
+      if (handleDirectedDictation(correctedTranscript)) {
+        return;
+      }
+
+      session.addFinalTranscript(correctedTranscript);
       void extractClinicalHistory(correctedTranscript);
     },
     onSystemLog: (event) => {
@@ -159,10 +265,19 @@ io.on("connection", (socket) => {
     state: session.clinicalHistory,
     elapsedMs: 0,
   });
+  socket.emit("dictation:status", {
+    activeTarget: session.activeDictationTarget,
+  });
 
   socket.on("lab:start", startTranscription);
 
   socket.on("lab:stop", stopTranscription);
+
+  socket.on("dictation:start:previous-exams", startPreviousExamsDictation);
+
+  socket.on("dictation:start:physical-exam", startPhysicalExamDictation);
+
+  socket.on("dictation:stop", stopCurrentDictation);
 
   // Limpia la consulta actual sin reiniciar el servidor ni cerrar la pagina.
   socket.on("lab:reset", () => {
@@ -172,6 +287,7 @@ io.on("connection", (socket) => {
       state: session.clinicalHistory,
       elapsedMs: 0,
     });
+    emitDictationStatus();
     io.emit("transcript:reset");
   });
 });

@@ -30,9 +30,18 @@ const additiveSlots = new Set<keyof ClinicalHistory>([
   "family_history",
   "previous_abnormal_exams",
   "previous_abnormal_exam_dates",
+  "previous_abnormal_results",
   "review_of_systems",
   "physical_exam",
   "head_to_toe_exam",
+  "physical_exam_general",
+  "physical_exam_head_neck",
+  "physical_exam_chest",
+  "physical_exam_abdomen",
+  "physical_exam_extremities",
+  "physical_exam_genitourinary",
+  "physical_exam_neurological",
+  "physical_exam_skin_soft_tissues",
   "housing_environment",
 ]);
 

@@ -12,6 +12,7 @@ export function renderHtml(): string {
     main { padding: 20px 24px; display: grid; grid-template-columns: 1fr 1.1fr; gap: 20px; }
     button { border: 1px solid #4f8cff; background: #2563eb; color: white; height: 36px; padding: 0 14px; border-radius: 6px; cursor: pointer; font-weight: 600; }
     button.secondary { background: #1b2329; color: #d8e0e4; border-color: #34414a; }
+    button.warning { background: #b7791f; border-color: #d69e2e; color: #fff7e6; }
     .meta { font-size: 12px; color: #95a3ad; display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
     .panel { background: #151b20; border: 1px solid #263038; border-radius: 8px; min-height: 500px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 16px 40px rgba(0,0,0,0.22); }
     .panel h2 { font-size: 14px; margin: 0; padding: 12px 14px; border-bottom: 1px solid #263038; background: #1a2228; display: flex; justify-content: space-between; gap: 12px; }
@@ -23,11 +24,17 @@ export function renderHtml(): string {
     .small { font-size: 12px; color: #95a3ad; margin-top: 4px; }
     .slots { padding: 14px; display: flex; flex-direction: column; gap: 16px; overflow: auto; }
     .category { border: 1px solid #2a353d; border-radius: 8px; background: #182027; overflow: hidden; }
-    .category h3 { margin: 0; padding: 10px 12px; font-size: 13px; color: #d7e0e5; background: #202a32; border-bottom: 1px solid #2a353d; }
+    .category h3 { margin: 0; padding: 10px 12px; font-size: 13px; color: #d7e0e5; background: #202a32; }
+    .category-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: #202a32; border-bottom: 1px solid #2a353d; }
+    .category-actions { display: flex; gap: 8px; padding: 8px 10px; }
+    .category-actions button { height: 30px; padding: 0 10px; font-size: 12px; }
     .category-grid { padding: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .slot { border: 1px solid #2a353d; border-radius: 8px; padding: 10px; background: #1b2329; min-height: 68px; }
+    .slot.active-edit { border-color: #d69e2e; background: #2b2414; box-shadow: inset 0 0 0 1px rgba(214,158,46,0.35); }
     .slot label { display: block; font-size: 12px; color: #95a3ad; margin-bottom: 6px; }
+    .slot.active-edit label { color: #f6d98d; }
     .slot div { font-size: 14px; line-height: 1.35; }
+    .slot div { white-space: pre-wrap; }
     .empty { color: #697780; font-style: italic; }
     @media (max-width: 950px) { main { grid-template-columns: 1fr; } header { align-items: flex-start; flex-direction: column; } .category-grid { grid-template-columns: 1fr; } }
   </style>
@@ -65,7 +72,12 @@ export function renderHtml(): string {
     const start = document.getElementById("start");
     const stop = document.getElementById("stop");
     const reset = document.getElementById("reset");
+    let startPreviousExamsDictation = null;
+    let startPhysicalExamDictation = null;
+    let stopDictation = null;
     let partialNode = null;
+    let activeDictationTarget = null;
+    let latestClinicalState = null;
 
     const slotCategories = [
       {
@@ -127,20 +139,37 @@ export function renderHtml(): string {
       {
         title: "Revisión de exámenes previos",
         fields: [
+          ["previous_abnormal_results", "Dictado textual de hallazgos alterados"],
           ["previous_abnormal_exams", "Exámenes con variables fuera de rango"],
           ["previous_abnormal_exam_dates", "Fechas de exámenes alterados"]
         ]
       },
       {
-        title: "Examen físico",
+        title: "Examen físico - signos y datos duros",
         fields: [
           ["blood_pressure", "Presión arterial"],
           ["pulse", "Pulso"],
           ["temperature", "Temperatura"],
           ["oxygen_saturation", "SaO2"],
           ["glucometry", "Glucometría"],
+          ["weight", "Peso"],
+          ["height", "Talla"],
+          ["bmi", "BMI / IMC"]
+        ]
+      },
+      {
+        title: "Examen físico - cefalocaudal descriptivo",
+        fields: [
+          ["physical_exam_general", "General"],
+          ["physical_exam_head_neck", "Cabeza y cuello"],
+          ["physical_exam_chest", "Tórax respiratorio y cardiovascular"],
+          ["physical_exam_abdomen", "Abdomen"],
+          ["physical_exam_extremities", "Extremidades"],
+          ["physical_exam_genitourinary", "Genitourinario"],
+          ["physical_exam_neurological", "Neurológico"],
+          ["physical_exam_skin_soft_tissues", "Piel y tejidos blandos"],
           ["head_to_toe_exam", "Cabeza a pies"],
-          ["physical_exam", "Otros hallazgos"]
+          ["physical_exam", "Resumen general / otros hallazgos"]
         ]
       },
       {
@@ -182,14 +211,62 @@ export function renderHtml(): string {
       for (const category of slotCategories) {
         const categoryNode = document.createElement("section");
         categoryNode.className = "category";
+        const header = document.createElement("div");
+        header.className = "category-header";
         const title = document.createElement("h3");
         title.textContent = category.title;
+        header.appendChild(title);
+
+        if (category.title === "Revisión de exámenes previos") {
+          const actions = document.createElement("div");
+          actions.className = "category-actions";
+
+          startPreviousExamsDictation = document.createElement("button");
+          startPreviousExamsDictation.className = "secondary";
+          startPreviousExamsDictation.textContent = "Iniciar dictado";
+          startPreviousExamsDictation.onclick = () => socket.emit("dictation:start:previous-exams");
+
+          stopDictation = document.createElement("button");
+          stopDictation.className = "warning";
+          stopDictation.textContent = "Finalizar dictado";
+          stopDictation.disabled = !activeDictationTarget;
+          stopDictation.onclick = () => socket.emit("dictation:stop");
+
+          actions.appendChild(startPreviousExamsDictation);
+          actions.appendChild(stopDictation);
+          header.appendChild(actions);
+        }
+
+        if (category.title === "Examen físico - cefalocaudal descriptivo") {
+          const actions = document.createElement("div");
+          actions.className = "category-actions";
+
+          startPhysicalExamDictation = document.createElement("button");
+          startPhysicalExamDictation.className = "secondary";
+          startPhysicalExamDictation.textContent = "Iniciar dictado";
+          startPhysicalExamDictation.onclick = () => socket.emit("dictation:start:physical-exam");
+
+          const stopPhysicalExamDictation = document.createElement("button");
+          stopPhysicalExamDictation.className = "warning";
+          stopPhysicalExamDictation.textContent = "Finalizar dictado";
+          stopPhysicalExamDictation.disabled = !activeDictationTarget;
+          stopPhysicalExamDictation.onclick = () => socket.emit("dictation:stop");
+          stopDictation = stopPhysicalExamDictation;
+
+          actions.appendChild(startPhysicalExamDictation);
+          actions.appendChild(stopPhysicalExamDictation);
+          header.appendChild(actions);
+        }
+
         const grid = document.createElement("div");
         grid.className = "category-grid";
 
         for (const [key, labelText] of category.fields) {
           const slot = document.createElement("div");
           slot.className = "slot";
+          if (activeDictationTarget === key) {
+            slot.className += " active-edit";
+          }
           const label = document.createElement("label");
           label.textContent = labelText;
           const value = document.createElement("div");
@@ -201,9 +278,29 @@ export function renderHtml(): string {
           grid.appendChild(slot);
         }
 
-        categoryNode.appendChild(title);
+        categoryNode.appendChild(header);
         categoryNode.appendChild(grid);
         slots.appendChild(categoryNode);
+      }
+      updateDictationButtons();
+    }
+
+    function updateDictationButtons() {
+      const stopButtons = Array.from(document.querySelectorAll(".category-actions .warning"));
+      for (const button of stopButtons) {
+        button.disabled = !activeDictationTarget;
+      }
+
+      if (startPreviousExamsDictation) {
+        startPreviousExamsDictation.disabled =
+          activeDictationTarget === "previous_abnormal_results" ||
+          activeDictationTarget === "head_to_toe_exam";
+      }
+
+      if (startPhysicalExamDictation) {
+        startPhysicalExamDictation.disabled =
+          activeDictationTarget === "head_to_toe_exam" ||
+          activeDictationTarget === "previous_abnormal_results";
       }
     }
 
@@ -246,8 +343,23 @@ export function renderHtml(): string {
     });
 
     socket.on("clinical:update", (event) => {
+      latestClinicalState = event.state;
       renderSlots(event.state);
       latency.textContent = event.elapsedMs ? event.elapsedMs + " ms" : "";
+    });
+
+    socket.on("dictation:status", (event) => {
+      activeDictationTarget = event.activeTarget;
+      updateDictationButtons();
+      clinicalStatus.textContent =
+        activeDictationTarget === "previous_abnormal_results"
+          ? "Dictando revisión de exámenes..."
+          : activeDictationTarget === "head_to_toe_exam"
+            ? "Dictando examen físico..."
+            : "";
+      if (latestClinicalState) {
+        renderSlots(latestClinicalState);
+      }
     });
 
     socket.on("clinical:error", (event) => {
